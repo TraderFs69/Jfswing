@@ -2,6 +2,7 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 import time
+from tqdm import tqdm
 
 sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 tickers = pd.read_html(sp500_url)[0]["Symbol"].tolist()
@@ -50,13 +51,10 @@ def calculate_adx(df, period=14):
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
     return dx.rolling(window=period).mean()
 
-for idx, ticker in enumerate(tickers):
-    print(f"[{idx+1}/{len(tickers)}] Téléchargement de {ticker}...")
-
+for idx, ticker in enumerate(tqdm(tickers, desc="Scan S&P500")):
     try:
         df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         if df is None or df.empty or len(df) < 200:
-            print(f"Pas assez de données pour {ticker}.")
             failed.append(ticker)
             failures_in_row += 1
             if failures_in_row >= MAX_FAILS_IN_ROW:
@@ -64,7 +62,7 @@ for idx, ticker in enumerate(tickers):
                 break
             continue
 
-        failures_in_row = 0  # Reset échecs consécutifs
+        failures_in_row = 0
         df.dropna(inplace=True)
 
         atr = calculate_atr(df, period=10)
