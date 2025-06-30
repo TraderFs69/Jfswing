@@ -53,7 +53,7 @@ def calculate_adx(df, period=14):
     return dx.rolling(window=period).mean()
 
 def download_with_timeout(ticker, timeout=15):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
         future = executor.submit(yf.download, ticker, period="6mo", interval="1d", progress=False)
         try:
             return future.result(timeout=timeout)
@@ -123,4 +123,3 @@ for idx, ticker in enumerate(tqdm(tickers, desc="Scan S&P500")):
 pd.DataFrame(results, columns=["Ticker"]).to_csv("coach_swing_signals.csv", index=False)
 pd.DataFrame(failed, columns=["FailedTicker"]).to_csv("failed_tickers.csv", index=False)
 print(f"🎉 Scan terminé. Signaux détectés sur {len(results)} tickers. Échecs : {len(failed)} tickers.")
-
