@@ -3,6 +3,7 @@ import yfinance as yf
 import numpy as np
 import time
 from tqdm import tqdm
+import concurrent.futures
 
 sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 tickers = pd.read_html(sp500_url)[0]["Symbol"].tolist()
@@ -51,9 +52,18 @@ def calculate_adx(df, period=14):
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
     return dx.rolling(window=period).mean()
 
+def download_with_timeout(ticker, timeout=15):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(yf.download, ticker, period="6mo", interval="1d", progress=False)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            print(f"❗ Timeout dépassé pour {ticker}")
+            return None
+
 for idx, ticker in enumerate(tqdm(tickers, desc="Scan S&P500")):
     try:
-        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        df = download_with_timeout(ticker, timeout=15)
         if df is None or df.empty or len(df) < 200:
             failed.append(ticker)
             failures_in_row += 1
@@ -113,3 +123,4 @@ for idx, ticker in enumerate(tqdm(tickers, desc="Scan S&P500")):
 pd.DataFrame(results, columns=["Ticker"]).to_csv("coach_swing_signals.csv", index=False)
 pd.DataFrame(failed, columns=["FailedTicker"]).to_csv("failed_tickers.csv", index=False)
 print(f"🎉 Scan terminé. Signaux détectés sur {len(results)} tickers. Échecs : {len(failed)} tickers.")
+
