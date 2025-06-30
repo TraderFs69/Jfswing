@@ -1,6 +1,6 @@
 
 pandas
 numpy
-yfinance
+aiohttp
 lxml
 tqdm
