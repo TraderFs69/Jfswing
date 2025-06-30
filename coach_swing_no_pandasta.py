@@ -3,8 +3,10 @@ import numpy as np
 import asyncio
 import aiohttp
 from tqdm.asyncio import tqdm
+import random
 
-SLEEP_BETWEEN_TICKS = 0.1  # pour ne pas surcharger Yahoo
+SLEEP_MIN = 20
+SLEEP_MAX = 40
 TIMEOUT_SECONDS = 15
 
 sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
@@ -44,7 +46,7 @@ def calculate_indicators(df):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     atr = tr.rolling(window=10).mean()
 
-    # UT Bot Trail (simplifié)
+    # UT Bot Trail simplifié
     upper_band = df["Close"] + 0.5 * atr
     lower_band = df["Close"] - 0.5 * atr
     trail_price = df["Close"].copy()
@@ -100,8 +102,8 @@ def calculate_indicators(df):
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        for i in tqdm(range(0, len(tickers), 10), desc="Scan par lots de 10"):
-            batch = tickers[i:i+10]
+        for i in tqdm(range(0, len(tickers), 5), desc="Scan par lots de 5"):
+            batch = tickers[i:i+5]
             tasks = [fetch_ticker(session, ticker) for ticker in batch]
             responses = await asyncio.gather(*tasks)
             for ticker, df in responses:
@@ -110,9 +112,12 @@ async def main():
                 elif calculate_indicators(df):
                     print(f"✅ Signal détecté sur {ticker}")
                     results.append(ticker)
-            await asyncio.sleep(SLEEP_BETWEEN_TICKS)
+            sleep_time = random.uniform(SLEEP_MIN, SLEEP_MAX)
+            print(f"⏳ Pause {sleep_time:.1f}s avant le prochain lot...")
+            await asyncio.sleep(sleep_time)
 
 asyncio.run(main())
 pd.DataFrame(results, columns=["Ticker"]).to_csv("coach_swing_signals.csv", index=False)
 pd.DataFrame(failed, columns=["FailedTicker"]).to_csv("failed_tickers.csv", index=False)
 print(f"🎉 Scan terminé. Signaux détectés sur {len(results)} tickers. Échecs : {len(failed)} tickers.")
+
