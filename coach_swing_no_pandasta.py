@@ -1,23 +1,23 @@
-
 import pandas as pd
 import yfinance as yf
 import numpy as np
 import time
 
-# Récupérer la liste S&P500 depuis Wikipedia
 sp500_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 tickers = pd.read_html(sp500_url)[0]["Symbol"].tolist()
 print(f"Tickers S&P500 récupérés : {len(tickers)}")
 
 results = []
+failed = []
+failures_in_row = 0
+MAX_FAILS_IN_ROW = 20
 
 def calculate_atr(df, period=10):
     high_low = df["High"] - df["Low"]
     high_close = np.abs(df["High"] - df["Close"].shift())
     low_close = np.abs(df["Low"] - df["Close"].shift())
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = tr.rolling(window=period).mean()
-    return atr
+    return tr.rolling(window=period).mean()
 
 def calculate_macd(close, fast=5, slow=13, signal=4):
     ema_fast = close.ewm(span=fast, adjust=False).mean()
@@ -48,15 +48,23 @@ def calculate_adx(df, period=14):
     plus_di = 100 * pd.Series(plus_dm).rolling(window=period).sum() / atr
     minus_di = 100 * pd.Series(minus_dm).rolling(window=period).sum() / atr
     dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
-    adx = dx.rolling(window=period).mean()
-    return adx
+    return dx.rolling(window=period).mean()
 
-for ticker in tickers:
+for idx, ticker in enumerate(tickers):
+    print(f"[{idx+1}/{len(tickers)}] Téléchargement de {ticker}...")
+
     try:
         df = yf.download(ticker, period="6mo", interval="1d", progress=False)
         if df is None or df.empty or len(df) < 200:
+            print(f"Pas assez de données pour {ticker}.")
+            failed.append(ticker)
+            failures_in_row += 1
+            if failures_in_row >= MAX_FAILS_IN_ROW:
+                print(f"❗ Trop d'échecs consécutifs ({failures_in_row}), arrêt du script.")
+                break
             continue
 
+        failures_in_row = 0  # Reset échecs consécutifs
         df.dropna(inplace=True)
 
         atr = calculate_atr(df, period=10)
@@ -78,9 +86,6 @@ for ticker in tickers:
         stoch_k, stoch_d = calculate_stochastic(df)
         stoch_cond = (stoch_k > stoch_d) & (stoch_k < 50)
 
-        sma100 = df["Close"].rolling(window=100).mean()
-        sma200 = df["Close"].rolling(window=200).mean()
-
         adx = calculate_adx(df)
         adx_cond = adx > 20
 
@@ -94,12 +99,19 @@ for ticker in tickers:
         buy_signal = ut_buy & macd_cond & stoch_cond & adx_cond & obv_cond
 
         if buy_signal.iloc[-1]:
-            print(f"Signal détecté sur {ticker}")
+            print(f"✅ Signal détecté sur {ticker}")
             results.append(ticker)
 
     except Exception as e:
-        print(f"Erreur sur {ticker} : {e}")
+        print(f"❌ Erreur sur {ticker} : {e}")
+        failed.append(ticker)
+        failures_in_row += 1
+        if failures_in_row >= MAX_FAILS_IN_ROW:
+            print(f"❗ Trop d'échecs consécutifs ({failures_in_row}), arrêt du script.")
+            break
+
     time.sleep(1.2)
 
 pd.DataFrame(results, columns=["Ticker"]).to_csv("coach_swing_signals.csv", index=False)
-print(f"Scan terminé. Signaux détectés sur {len(results)} tickers.")
+pd.DataFrame(failed, columns=["FailedTicker"]).to_csv("failed_tickers.csv", index=False)
+print(f"🎉 Scan terminé. Signaux détectés sur {len(results)} tickers. Échecs : {len(failed)} tickers.")
